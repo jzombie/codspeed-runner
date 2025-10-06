@@ -17,9 +17,10 @@ mod instruments;
 mod poll_results;
 pub mod run_environment;
 pub mod runner;
-mod uploader;
+pub mod uploader;
 
 pub mod config;
+pub mod ingest;
 pub mod logger;
 
 fn show_banner() {
@@ -58,6 +59,16 @@ pub struct PerfRunArgs {
     /// The unwinding mode that should be used with perf to collect the call stack.
     #[arg(long, env = "CODSPEED_PERF_UNWINDING_MODE")]
     perf_unwinding_mode: Option<UnwindingMode>,
+}
+
+impl PerfRunArgs {
+    /// Public constructor to create PerfRunArgs programmatically
+    pub fn new(enable_perf: bool, perf_unwinding_mode: Option<UnwindingMode>) -> Self {
+        Self {
+            enable_perf,
+            perf_unwinding_mode,
+        }
+    }
 }
 
 #[derive(Args, Debug)]

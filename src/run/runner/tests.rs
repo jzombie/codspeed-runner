@@ -129,6 +129,7 @@ async fn create_test_setup() -> (SystemInfo, RunData, TempDir) {
     (system_info, run_data, temp_dir)
 }
 
+#[cfg(feature = "executor_tests")]
 mod valgrind {
     use super::*;
 
@@ -185,6 +186,7 @@ mod valgrind {
     }
 }
 
+#[cfg(feature = "executor_tests")]
 mod walltime {
     use super::*;
 
