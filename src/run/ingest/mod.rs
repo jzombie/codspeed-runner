@@ -54,6 +54,13 @@ mod tests {
 
         criterion::ingest_criterion_results(&samples_dir, &profile).unwrap();
 
+        let results_dir = profile.join("results");
+        assert!(results_dir.is_dir());
+        let results_file = results_dir.join(format!("{}.json", std::process::id()));
+        assert!(results_file.exists());
+        let results_content = std::fs::read_to_string(&results_file).unwrap();
+        assert!(results_content.contains("bench1"));
+
         let bench_file = profile.join("codspeed-benchmarks.json");
         assert!(bench_file.exists());
         let content = std::fs::read_to_string(bench_file).unwrap();

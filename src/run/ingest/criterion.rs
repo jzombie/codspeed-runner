@@ -56,6 +56,15 @@ pub fn ingest_criterion_results(criterion_dir: &Path, profile_folder: &Path) -> 
     fs::create_dir_all(profile_folder)?;
 
     let results = WalltimeResults::new(benchmarks.clone());
+
+    let results_dir = profile_folder.join("results");
+    fs::create_dir_all(&results_dir).context("Failed to create results directory")?;
+    let results_json_path = results_dir.join(format!("{}.json", std::process::id()));
+    let results_json_file =
+        std::fs::File::create(&results_json_path).context("Failed to create results JSON file")?;
+    serde_json::to_writer_pretty(&results_json_file, &results)
+        .context("Failed to write results JSON file")?;
+
     let bench_json_path = profile_folder.join("codspeed-benchmarks.json");
     let bench_json_file = std::fs::File::create(&bench_json_path)
         .context("Failed to create codspeed-benchmarks.json")?;
@@ -228,7 +237,7 @@ impl WalltimeResults {
     fn new(benchmarks: Vec<WalltimeBenchmark>) -> Self {
         Self {
             creator: Creator {
-                name: "codspeed-criterion-ingest".to_string(),
+                name: "codspeed-rust".to_string(),
                 version: env!("CARGO_PKG_VERSION").to_string(),
                 pid: std::process::id(),
             },
