@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use runner_shared::metadata::PerfMetadata;
+use runner_shared::{fifo::MarkerType, metadata::PerfMetadata};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -62,19 +62,31 @@ pub fn ingest_criterion_results(criterion_dir: &Path, profile_folder: &Path) -> 
     serde_json::to_writer_pretty(bench_json_file, &results)
         .context("Failed to write codspeed-benchmarks.json")?;
 
-    let base_ts = current_time_ns();
-    let uri_by_ts = benchmarks
-        .iter()
-        .enumerate()
-        .map(|(idx, bench)| (base_ts + idx as u64, bench.uri().to_string()))
-        .collect();
+    let mut uri_by_ts = Vec::with_capacity(benchmarks.len());
+    let mut markers = Vec::with_capacity(benchmarks.len() * 2);
+    let mut timeline_cursor = 0u64;
+
+    for bench in &benchmarks {
+        uri_by_ts.push((timeline_cursor, bench.uri().to_string()));
+        markers.push(MarkerType::SampleStart(timeline_cursor));
+
+        let raw_duration_ns = (bench.stats.total_time * NANOSECONDS_IN_SECOND).round();
+        let duration_ns = raw_duration_ns
+            .is_finite()
+            .then_some(raw_duration_ns.max(1.0))
+            .unwrap_or(1.0) as u64;
+        let end_ts = timeline_cursor + duration_ns;
+
+        markers.push(MarkerType::SampleEnd(end_ts));
+        timeline_cursor = end_ts.saturating_add(1);
+    }
 
     let metadata = PerfMetadata {
         version: 1,
-        integration: ("criterion-ingest".into(), env!("CARGO_PKG_VERSION").into()),
+        integration: ("codspeed-runner".into(), env!("CARGO_PKG_VERSION").into()),
         uri_by_ts,
         ignored_modules: vec![],
-        markers: vec![],
+        markers,
     };
     metadata
         .save_to(profile_folder)
@@ -203,14 +215,6 @@ fn determine_identity(criterion_root: &Path, dir: &Path) -> BenchmarkIdentity {
     let uri = format!("criterion::{uri_suffix}");
 
     BenchmarkIdentity { name, uri }
-}
-
-fn current_time_ns() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(0)
 }
 
 #[derive(Clone, Debug, Serialize)]
