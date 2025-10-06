@@ -144,7 +144,7 @@ fn build_walltime_benchmark(
 
     let benchmark = WalltimeBenchmark {
         metadata: BenchmarkMetadata {
-            name: identity.name,
+            name: identity.display_name,
             uri: identity.uri,
         },
         config: BenchmarkConfig {
@@ -183,47 +183,73 @@ fn load_benchmark_measurements(dir: &Path) -> Option<BenchmarkMeasurements> {
 
 fn determine_identity(criterion_root: &Path, dir: &Path) -> BenchmarkIdentity {
     let new_dir = dir.join("new");
-    if let Ok(benchmark_id) = fs::read_to_string(new_dir.join("benchmark.json")) {
-        if let Ok(id) = serde_json::from_str::<BenchmarkIdRecord>(&benchmark_id) {
-            let mut name = id.group_id.clone();
-            if let Some(function) = id.function_id {
-                if !function.is_empty() {
-                    name.push_str("::");
-                    name.push_str(&function);
-                }
-            }
-            if let Some(parameter) = id.value_str {
-                if !parameter.is_empty() {
-                    name.push_str(&format!("[{parameter}]"));
-                }
-            }
-            let uri = format!("criterion::{name}");
-            return BenchmarkIdentity { name, uri };
-        }
-    }
-
-    let relative = dir
+    let relative_components = dir
         .strip_prefix(criterion_root)
         .unwrap_or(dir)
         .iter()
-        .map(|component| component.to_string_lossy())
-        .collect::<Vec<_>>()
-        .join("::");
-    let name = if relative.is_empty() {
+        .map(|component| component.to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+
+    if let Ok(benchmark_id) = fs::read_to_string(new_dir.join("benchmark.json")) {
+        if let Ok(id) = serde_json::from_str::<BenchmarkIdRecord>(&benchmark_id) {
+            let mut segments = Vec::new();
+            if !id.group_id.is_empty() {
+                segments.push(id.group_id);
+            }
+
+            if let Some(function) = id.function_id {
+                if !function.is_empty() {
+                    segments.push(function);
+                }
+            }
+
+            if let Some(parameter) = id.value_str {
+                if !parameter.is_empty() {
+                    if let Some(last) = segments.last_mut() {
+                        last.push_str(&format!("[{parameter}]"));
+                    } else {
+                        segments.push(format!("[{parameter}]"));
+                    }
+                }
+            }
+
+            let display_name = if segments.is_empty() {
+                relative_components.join("/")
+            } else {
+                segments.join("/")
+            };
+
+            let uri_suffix = if segments.is_empty() {
+                if relative_components.is_empty() {
+                    display_name.clone()
+                } else {
+                    relative_components.join("::")
+                }
+            } else {
+                segments.join("::")
+            };
+
+            let uri = format!("criterion::{uri_suffix}");
+            return BenchmarkIdentity { display_name, uri };
+        }
+    }
+
+    let display_name = if relative_components.is_empty() {
         dir.file_name()
             .map(|os| os.to_string_lossy().to_string())
             .unwrap_or_else(|| "benchmark".to_string())
     } else {
-        relative.clone()
+        relative_components.join("/")
     };
-    let uri_suffix = if relative.is_empty() {
-        name.clone()
+
+    let uri_suffix = if relative_components.is_empty() {
+        display_name.replace('/', "::")
     } else {
-        relative
+        relative_components.join("::")
     };
     let uri = format!("criterion::{uri_suffix}");
 
-    BenchmarkIdentity { name, uri }
+    BenchmarkIdentity { display_name, uri }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -555,6 +581,6 @@ struct BenchmarkIdRecord {
 }
 
 struct BenchmarkIdentity {
-    name: String,
+    display_name: String,
     uri: String,
 }
