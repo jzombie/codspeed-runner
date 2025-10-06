@@ -56,7 +56,11 @@ impl SystemInfo {
     pub fn new() -> Result<Self> {
         let os = System::distribution_id();
         let os_version = System::os_version().ok_or(anyhow!("Failed to get OS version"))?;
-        let arch = System::cpu_arch();
+        let arch_raw = System::cpu_arch();
+        let arch = match arch_raw.as_str() {
+            "arm64" => "aarch64".to_string(),
+            other => other.to_string(),
+        };
         let user = get_user()?;
         let host = System::host_name().ok_or(anyhow!("Failed to get host name"))?;
 
