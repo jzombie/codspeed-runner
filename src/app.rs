@@ -60,15 +60,12 @@ pub async fn run() -> Result<()> {
     let api_client = CodSpeedAPIClient::try_from((&cli, &codspeed_config))?;
 
     match cli.command {
-        Commands::Run(_) => {} // Run is responsible for its own logger initialization
-        _ => {
-            init_local_logger()?;
-        }
-    }
-
-    match cli.command {
         Commands::Run(args) => run::run(args, &api_client, &codspeed_config).await?,
         Commands::IngestCriterion(args) => {
+            if !args.upload {
+                init_local_logger()?;
+            }
+
             // ingest and optionally upload the produced profile folder
             let profile_folder = run::ingest::ingest_criterion(args.clone()).await?;
             if args.upload {
@@ -95,8 +92,14 @@ pub async fn run() -> Result<()> {
                 run::run(run_args, &api_client, &codspeed_config).await?;
             }
         }
-        Commands::Auth(args) => auth::run(args, &api_client).await?,
-        Commands::Setup => setup::setup().await?,
+        Commands::Auth(args) => {
+            init_local_logger()?;
+            auth::run(args, &api_client).await?;
+        }
+        Commands::Setup => {
+            init_local_logger()?;
+            setup::setup().await?;
+        }
     }
     Ok(())
 }
