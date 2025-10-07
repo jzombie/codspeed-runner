@@ -190,6 +190,8 @@ fn determine_identity(criterion_root: &Path, dir: &Path) -> BenchmarkIdentity {
         .map(|component| component.to_string_lossy().to_string())
         .collect::<Vec<_>>();
 
+    let mut uri_segments = relative_components.clone();
+
     if let Ok(benchmark_id) = fs::read_to_string(new_dir.join("benchmark.json")) {
         if let Ok(id) = serde_json::from_str::<BenchmarkIdRecord>(&benchmark_id) {
             let mut segments = Vec::new();
@@ -213,18 +215,16 @@ fn determine_identity(criterion_root: &Path, dir: &Path) -> BenchmarkIdentity {
                 }
             }
 
-            let mut display_segments = relative_components.clone();
-
-            if segments.is_empty() && display_segments.is_empty() {
+            if segments.is_empty() && uri_segments.is_empty() {
                 if let Some(file_name) = dir.file_name().map(|os| os.to_string_lossy().to_string())
                 {
-                    display_segments.push(file_name);
+                    uri_segments.push(file_name);
                 } else {
-                    display_segments.push("benchmark".to_string());
+                    uri_segments.push("benchmark".to_string());
                 }
             } else {
                 for segment in &segments {
-                    if display_segments
+                    if uri_segments
                         .last()
                         .map(|existing| existing == segment)
                         .unwrap_or(false)
@@ -232,38 +232,40 @@ fn determine_identity(criterion_root: &Path, dir: &Path) -> BenchmarkIdentity {
                         continue;
                     }
 
-                    if display_segments.iter().any(|existing| existing == segment) {
+                    if uri_segments.iter().any(|existing| existing == segment) {
                         continue;
                     }
 
-                    display_segments.push(segment.clone());
+                    uri_segments.push(segment.clone());
                 }
             }
-
-            if display_segments.is_empty() {
-                display_segments.push("benchmark".to_string());
-            }
-
-            let display_name = display_segments.join("/");
-            let uri_suffix = display_segments.join("::");
-
-            let uri = format!("criterion::{uri_suffix}");
-            return BenchmarkIdentity { display_name, uri };
         }
     }
 
-    let display_name = if relative_components.is_empty() {
-        dir.file_name()
-            .map(|os| os.to_string_lossy().to_string())
-            .unwrap_or_else(|| "benchmark".to_string())
+    if uri_segments.is_empty() {
+        if let Some(file_name) = dir.file_name().map(|os| os.to_string_lossy().to_string()) {
+            uri_segments.push(file_name);
+        } else {
+            uri_segments.push("benchmark".to_string());
+        }
+    }
+
+    let display_segments = if uri_segments.len() >= 2 {
+        uri_segments[uri_segments.len() - 2..].to_vec()
     } else {
-        relative_components.join("/")
+        uri_segments.clone()
     };
 
-    let uri_suffix = if relative_components.is_empty() {
-        display_name.replace('/', "::")
+    let display_name = if display_segments.is_empty() {
+        "benchmark".to_string()
     } else {
-        relative_components.join("::")
+        display_segments.join("/")
+    };
+
+    let uri_suffix = if uri_segments.is_empty() {
+        "benchmark".to_string()
+    } else {
+        uri_segments.join("::")
     };
     let uri = format!("criterion::{uri_suffix}");
 
@@ -601,4 +603,51 @@ struct BenchmarkIdRecord {
 struct BenchmarkIdentity {
     display_name: String,
     uri: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn display_name_includes_parent_directory() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path();
+        let bench_dir = root
+            .join("column_store_fragmented_1M")
+            .join("sum_u64_fragmented_scan_only");
+        std::fs::create_dir_all(bench_dir.join("new")).unwrap();
+
+        let identity = determine_identity(root, &bench_dir);
+
+        assert_eq!(
+            identity.display_name,
+            "column_store_fragmented_1M/sum_u64_fragmented_scan_only"
+        );
+        assert_eq!(
+            identity.uri,
+            "criterion::column_store_fragmented_1M::sum_u64_fragmented_scan_only"
+        );
+    }
+
+    #[test]
+    fn display_name_uses_last_two_uri_segments() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path();
+        let bench_dir = root
+            .join("very")
+            .join("deep")
+            .join("benchmark_group")
+            .join("inner_bench");
+        std::fs::create_dir_all(bench_dir.join("new")).unwrap();
+
+        let identity = determine_identity(root, &bench_dir);
+
+        assert_eq!(identity.display_name, "benchmark_group/inner_bench");
+        assert_eq!(
+            identity.uri,
+            "criterion::very::deep::benchmark_group::inner_bench"
+        );
+    }
 }
