@@ -213,21 +213,44 @@ fn determine_identity(criterion_root: &Path, dir: &Path) -> BenchmarkIdentity {
                 }
             }
 
-            let display_name = if segments.is_empty() {
-                relative_components.join("/")
-            } else {
-                segments.join("/")
-            };
+            let mut display_segments = Vec::new();
+            if let Some(first) = relative_components.first() {
+                display_segments.push(first.clone());
+            }
 
-            let uri_suffix = if segments.is_empty() {
-                if relative_components.is_empty() {
-                    display_name.clone()
-                } else {
-                    relative_components.join("::")
+            if segments.is_empty() {
+                if relative_components.len() > 1 {
+                    display_segments.extend(relative_components.iter().skip(1).cloned());
                 }
             } else {
-                segments.join("::")
-            };
+                for segment in &segments {
+                    if display_segments
+                        .last()
+                        .map(|existing| existing == segment)
+                        .unwrap_or(false)
+                    {
+                        continue;
+                    }
+                    display_segments.push(segment.clone());
+                }
+            }
+
+            if display_segments.is_empty() {
+                if !segments.is_empty() {
+                    display_segments = segments.clone();
+                } else if !relative_components.is_empty() {
+                    display_segments = relative_components.clone();
+                } else if let Some(file_name) =
+                    dir.file_name().map(|os| os.to_string_lossy().to_string())
+                {
+                    display_segments.push(file_name);
+                } else {
+                    display_segments.push("benchmark".to_string());
+                }
+            }
+
+            let display_name = display_segments.join("/");
+            let uri_suffix = display_segments.join("::");
 
             let uri = format!("criterion::{uri_suffix}");
             return BenchmarkIdentity { display_name, uri };
