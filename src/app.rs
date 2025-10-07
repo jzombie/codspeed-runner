@@ -46,6 +46,8 @@ pub struct Cli {
 enum Commands {
     /// Run the bench command and upload the results to CodSpeed
     Run(run::RunArgs),
+    /// Ingest existing Criterion output and produce a CodSpeed profile folder
+    IngestCriterion(run::ingest::IngestArgs),
     /// Manage the CLI authentication state
     Auth(auth::AuthArgs),
     /// Pre-install the codspeed executors
@@ -58,16 +60,46 @@ pub async fn run() -> Result<()> {
     let api_client = CodSpeedAPIClient::try_from((&cli, &codspeed_config))?;
 
     match cli.command {
-        Commands::Run(_) => {} // Run is responsible for its own logger initialization
-        _ => {
-            init_local_logger()?;
-        }
-    }
-
-    match cli.command {
         Commands::Run(args) => run::run(args, &api_client, &codspeed_config).await?,
-        Commands::Auth(args) => auth::run(args, &api_client).await?,
-        Commands::Setup => setup::setup().await?,
+        Commands::IngestCriterion(args) => {
+            if !args.upload {
+                init_local_logger()?;
+            }
+
+            // ingest and optionally upload the produced profile folder
+            let profile_folder = run::ingest::ingest_criterion(args.clone()).await?;
+            if args.upload {
+                // Reuse the existing `run` upload flow: construct RunArgs that skip running and point to the profile folder
+                let run_args = run::RunArgs {
+                    upload_url: None,
+                    token: None,
+                    repository: None,
+                    provider: None,
+                    working_directory: None,
+                    mode: run::RunnerMode::Walltime,
+                    instruments: vec![],
+                    mongo_uri_env_name: None,
+                    profile_folder: Some(profile_folder),
+                    message_format: None,
+                    skip_upload: false,
+                    skip_run: true,
+                    skip_setup: true,
+                    perf_run_args: run::PerfRunArgs::new(false, None),
+                    command: vec![],
+                };
+
+                // Run the uploader path (this will call uploader::upload internally)
+                run::run(run_args, &api_client, &codspeed_config).await?;
+            }
+        }
+        Commands::Auth(args) => {
+            init_local_logger()?;
+            auth::run(args, &api_client).await?;
+        }
+        Commands::Setup => {
+            init_local_logger()?;
+            setup::setup().await?;
+        }
     }
     Ok(())
 }

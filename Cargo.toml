@@ -9,6 +9,10 @@ publish = false
 name = "codspeed"
 path = "src/main.rs"
 
+[features]
+# Enable slow executor integration tests (valgrind/walltime). Disabled by default.
+executor_tests = []
+
 
 [dependencies]
 anyhow = "1.0.75"
